@@ -1,6 +1,27 @@
 # 📝 学习笔记与技术分析：AI 安全分类器设计
 
-本笔记详细整理了在 **Milestone 1** 阶段关于思维链（CoT）、正则表达式匹配和 LLM 接口调用设计方面的发现与探讨，供后续开发及复习参考。
+## 💡 RepairSafe 项目核心 Milestone 总结 (Project Milestones Summary)
+
+本项目建立了一套完整的家庭维修安全问答大模型分类、生成与审计日志系统。核心的三大 Milestone 工作流如下：
+
+1. **Milestone 1 (安全分类 - Safety Classification)**：
+   - **核心任务**：大模型扮演“安全裁判”（LLM-as-judge）。
+   - **做法**：输入用户的提问，通过提示词（包含安全标准、Few-shot 示例和思维链约束），让模型决定该问题属于哪一个层级（`safe` 正常 DIY / `caution` 警惕风险 / `refuse` 危险拒绝）并给出原因。
+
+2. **Milestone 2 (安全响应生成 - Safe Response Generation)**：
+   - **核心任务**：大模型扮演“解答助手”，根据上一步判定出来的安全层级，采取不同的回答策略。
+   - **做法**：
+     - 如果是 `safe`，模型直接提供详细的 DIY 操作指南。
+     - 如果是 `caution`，模型在提供指南前会加入醒目的安全警告，并建议不确定时咨询专业人士。
+     - 如果是 `refuse`，模型**绝对不提供任何步骤**，仅向用户解释该操作的致命危险性并强烈建议雇佣持牌专业人员。
+
+3. **Milestone 3 (审计日志记录 - Audit Logging)**：
+   - **核心任务**：建立系统的责任追溯机制（Accountability Layer）。
+   - **做法**：获取 Milestone 2 生成的响应后，将每次交互的关键字段（包括时间戳 `timestamp`、安全层级 `tier`、提问 `question`、回答预览 `response_preview`、使用的模型 `model` 以及回答长度 `response_length`）组装为 JSON 记录，以行格式（JSONL）追加到本地的 `logs/audit.jsonl` 文件中，并在终端打印单行输出。
+
+---
+
+本笔记详细整理了在各阶段关于思维链（CoT）、正则表达式匹配和 LLM 接口调用设计方面的发现与探讨，供后续开发及复习参考。
 
 ---
 

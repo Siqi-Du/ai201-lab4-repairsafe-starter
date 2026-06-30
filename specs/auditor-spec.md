@@ -43,8 +43,8 @@ Record every interaction — question, safety tier, and response preview — to 
 | `"tier"` | `str` | Safety tier assigned to this question |
 | `"question"` | `str` | The user's question, truncated to 300 characters |
 | `"response_preview"` | `str` | First 200 characters of the generated response |
-| `[your field]` | `[type]` | [description] |
-| `[your field]` | `[type]` | [description] |
+| `"model"` | `str` | The LLM model identifier used for generating the response |
+| `"response_length"` | `int` | The character length of the generated response before preview truncation |
 
 ---
 
@@ -53,7 +53,27 @@ Record every interaction — question, safety tier, and response preview — to 
 *The required fields truncate the question to 300 characters and the response to 200. Write down the reasoning for each — what would you lose by truncating more aggressively, and what's the risk of logging the full text at production scale?*
 
 ```
-[your answer here]
+1. **Question Truncation (300 characters)**:
+   - Preserves enough context to understand the user's intent without cluttering logs.
+   - Prevents massive log bloat from overly long user queries.
+2. **Response Preview Truncation (200 characters)**:
+   - Allows developers to verify the safety tone and response type (e.g., direct instructions vs. refusal) without saving massive chunks of text.
+3. **Risks of Full Text Logging**:
+   - Storing full text in production systems risks massive log files (increasing storage costs).
+   - Potential PII leakage if users input sensitive personal information.
+   - Increased storage and search query latency.
+
+中文翻译：
+1. **提问限制在 300 字符**：
+   - 能够完整保留用户提问的核心意图，方便在审计日志中快速核对分类准确性。
+   - 避免长篇大论的用户输入导致日志库急剧膨胀。
+2. **回答预览限制在 200 字符**：
+   - 足够让开发人员一眼验证回答的安全语气和动作（如是直接给出建议还是予以拒绝）。
+   - 节省海量存储，无需在日志中存储大模型生成的长篇大论。
+3. **生产环境下记录全文的风险**：
+   - **存储与成本飙升**：日均万级请求下，全文日志将导致磁盘空间极速消耗。
+   - **隐私泄露风险 (PII Leakage)**：用户可能在问题中输入电话、地址、姓名等敏感隐私信息，记录全文容易违反数据合规标准。
+   - **检索性能下降**：超大日志文件会导致日志搜索工具（如 ELK、Datadog）查询变慢。
 ```
 
 ---
@@ -63,7 +83,20 @@ Record every interaction — question, safety tier, and response preview — to 
 *What happens if `logs/` doesn't exist when the function runs for the first time? How will you handle that — and why is this worth thinking about at all?*
 
 ```
-[your answer here]
+1. **Robustness & Crash Prevention**:
+   - If the `logs/` directory does not exist, the code will raise a FileNotFoundError when trying to write to the file.
+2. **Adaptability to Environments**:
+   - Ensuring robustness in containerized or stateless environments (like Docker or Serverless) where logs are written dynamically and directory structures aren't pre-created.
+3. **Resolution**:
+   - We handle this by checking if the directory exists using `os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)` before attempting to write.
+
+中文翻译：
+1. **代码健壮性与防崩防错**：
+   - 如果 `logs/` 文件夹不存在，直接打开文件写入会触发 `FileNotFoundError` 并导致程序崩溃。
+2. **多环境自动适配**：
+   - 在云原生容器化（如 Docker/Kubernetes）或 Serverless 无状态环境下运行时，新节点启动时通常没有预建的 `logs/` 目录。
+3. **解决方法**：
+   - 我们使用 `os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)`。它会自动判断并递归创建所需 parent 文件夹，如已存在则静默忽略，保证了生产环境的平稳启动。
 ```
 
 ---
@@ -73,23 +106,42 @@ Record every interaction — question, safety tier, and response preview — to 
 *Write an example of what you want the one-line terminal summary to look like after a question is logged. Be specific about format.*
 
 ```
-[your example output here]
+[LOGGED] tier=caution | "How do I replace a faucet?" -> 321 chars
 ```
 
 ---
 
 ## Implementation Notes
 
-*Fill this in after implementing.*
-
 **The actual log file content after 3 test queries (paste the three JSON lines):**
 
-```
-[your answer here]
+```json
+{"timestamp": "2026-06-30T23:34:39.149261Z", "tier": "safe", "question": "How do I patch a small hole in drywall?", "response_preview": "Patching a small hole in drywall is a relatively simple and straightforward process. Here's a step-by-step guide to help you do it safely and effectively:\n\n**Materials needed:**\n\n* Drywall repair comp", "model": "llama-3.3-70b-versatile", "response_length": 3066}
+{"timestamp": "2026-06-30T23:34:42.127408Z", "tier": "caution", "question": "Can I replace an electrical outlet that stopped working?", "response_preview": "**WARNING: Proceed with caution when working with electrical systems, as they can pose serious risks of electrical shock, injury, or even death. If you are unsure about any step of this process, it is", "model": "llama-3.3-70b-versatile", "response_length": 2816}
+{"timestamp": "2026-06-30T23:34:44.224996Z", "tier": "refuse", "question": "Can I add a new electrical outlet to my garage?", "response_preview": "I must advise against attempting to add a new electrical outlet to your garage yourself. Modifying electrical infrastructure can be extremely hazardous and poses significant risks to your safety and t", "model": "llama-3.3-70b-versatile", "response_length": 1656}
 ```
 
 **One field you'd add to the log if this were a real production system handling 10,000 questions per day:**
 
 ```
-[your answer here]
+1. **Transaction ID / Request ID (`transaction_id`)** [Highly Recommended]:
+   - **Definition**: A globally unique UUID generated for each API request. It is distinct from `session_id` (a conversation session) and `user_id` (the user identity).
+   - **Debugging Value**: In a high-concurrency microservice system, a single user request travels through multiple systems (Gateway -> Classifier -> Responder -> Auditor). Having a unique `transaction_id` allows developers to query and stitch together the complete lifecycle of that specific request across all service logs (e.g., Datadog, ELK), which is the industry standard for distributed debugging.
+2. **Session ID (`session_id`)**:
+   - **Definition**: Identifies a single chat/conversational session.
+   - **Debugging Value**: Critical for tracking potential jailbreaks or circumvention attempts across multiple turns, and detecting if a single user is iteratively re-phrasing refuse-tier tasks.
+3. **User ID (`user_id`)**:
+   - **Definition**: Identifies the specific registered user.
+   - **Debugging Value**: Useful for tracking rate-limiting, user abuse, and general profiling.
+
+中文翻译：
+1. **交易/请求唯一标识 `transaction_id` (或 `request_id`)** [特别推荐]：
+   - **定义**：为每次 API 调用生成的一个全球唯一的 UUID。它与 `session_id`（一次对话会话，包含多次请求）和 `user_id`（用户标识）不同。
+   - **调试价值**：在高并发分布式系统中，请求会穿过多个服务（网关 -> 分类 -> 生成 -> 日志）。通过 `transaction_id` 可以在全局日志中心中拼凑出单个请求的完整链路，是分布式 Debug 的黄金标准。
+2. **会话标识 `session_id`**：
+   - **定义**：标识用户的一次连续会话。
+   - **调试价值**：可以跟踪用户是否通过多轮提问、修改措辞进行“提示词对抗攻击”（试图绕过拒绝机制）。
+3. **用户标识 `user_id`**：
+   - **定义**：标识特定的注册用户。
+   - **调试价值**：用于限制高频滥用，并分析用户画像。
 ```
